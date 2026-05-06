@@ -1,0 +1,4 @@
+winsdk>=1.0.0b10; python_version < "3.14"
+winrt-Windows.Media.Control>=3.2.1; python_version >= "3.14"
+winrt-Windows.Foundation>=3.2.1; python_version >= "3.14"
+winrt-Windows.Foundation.Collections>=3.2.1; python_version >= "3.14"

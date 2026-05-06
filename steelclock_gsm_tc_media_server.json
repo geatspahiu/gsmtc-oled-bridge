@@ -1,0 +1,146 @@
+{
+  "$schema": "schema/config.schema.json",
+  "schema_version": 2,
+  "config_name": "GSMTC Media Server",
+  "refresh_rate_ms": 100,
+  "display": {
+    "width": 128,
+    "height": 40,
+    "background": 0
+  },
+  "widgets": [
+    {
+      "type": "beefweb",
+      "id": "gsm_tc_title",
+      "enabled": true,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 16,
+        "z": 0
+      },
+      "style": {
+        "background": 0,
+        "border": -1,
+        "padding": 1
+      },
+      "text": {
+        "font": "5x7",
+        "size": 11,
+        "format": "{title}",
+        "align": {
+          "h": "left",
+          "v": "center"
+        }
+      },
+      "beefweb": {
+        "server_url": "http://localhost:8765",
+        "placeholder": {
+          "mode": "text",
+          "text": "⏸ Nothing playing"
+        }
+      },
+      "scroll": {
+        "enabled": true,
+        "direction": "left",
+        "speed": 34,
+        "mode": "continuous",
+        "pause_ms": 0,
+        "gap": 32
+      },
+      "auto_hide": {
+        "enabled": false,
+        "timeout": 5
+      },
+      "update_interval": 0.5
+    },
+    {
+      "type": "beefweb",
+      "id": "gsm_tc_artist",
+      "enabled": true,
+      "position": {
+        "x": 0,
+        "y": 16,
+        "w": 128,
+        "h": 12,
+        "z": 0
+      },
+      "style": {
+        "background": 0,
+        "border": -1,
+        "padding": 1
+      },
+      "text": {
+        "font": "5x7",
+        "size": 9,
+        "format": "{artist}",
+        "align": {
+          "h": "left",
+          "v": "center"
+        }
+      },
+      "beefweb": {
+        "server_url": "http://localhost:8765",
+        "placeholder": {
+          "mode": "text",
+          "text": ""
+        }
+      },
+      "scroll": {
+        "enabled": true,
+        "direction": "left",
+        "speed": 24,
+        "mode": "continuous",
+        "pause_ms": 0,
+        "gap": 28
+      },
+      "auto_hide": {
+        "enabled": false,
+        "timeout": 5
+      },
+      "update_interval": 0.5
+    },
+    {
+      "type": "beefweb",
+      "id": "gsm_tc_time",
+      "enabled": true,
+      "position": {
+        "x": 0,
+        "y": 28,
+        "w": 128,
+        "h": 12,
+        "z": 0
+      },
+      "style": {
+        "background": 0,
+        "border": -1,
+        "padding": 1
+      },
+      "text": {
+        "font": "5x7",
+        "size": 10,
+        "format": "{album}",
+        "align": {
+          "h": "center",
+          "v": "center"
+        }
+      },
+      "beefweb": {
+        "server_url": "http://localhost:8765",
+        "placeholder": {
+          "mode": "text",
+          "text": "Stopped"
+        }
+      },
+      "scroll": {
+        "enabled": false
+      },
+      "auto_hide": {
+        "enabled": false,
+        "timeout": 5
+      },
+      "update_interval": 0.5
+    }
+  ]
+}
