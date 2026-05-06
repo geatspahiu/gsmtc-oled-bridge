@@ -20,8 +20,8 @@ and Arctis Nova Pro base stations (128x64). The included profile is tuned for
 SteelClock 128x40 layout:
 
 ```text
-Baby ti e din
-Stealth
+Song Name
+Artist-Album
 PLAY 1:34/2:58
 ```
 
@@ -31,13 +31,13 @@ Raw JSON example:
 
 ```json
 {
-  "title": "Baby ti e din",
-  "artist": "Stealth",
+  "title": "Song Name",
+  "artist": "Artist",
   "state": "playing",
   "position": 94,
   "duration": 178,
   "album": null,
-  "display": "▶ Baby ti e din - Stealth [██████░░░░░░] 1:34/2:58"
+  "display": "▶ Song Name - Artist [██████░░░░░░] 1:34/2:58"
 }
 ```
 
@@ -46,7 +46,7 @@ Raw JSON example:
 - Windows 10/11
 - Python 3.10 or newer
 - A media app that publishes metadata to Windows GSMTC
-- Optional: [SteelClock](https://github.com/your-target/steelclock) for SteelSeries OLED output
+- Optional: [SteelClock]((https://github.com/pozitronik/steelclock-go)) for SteelSeries OLED output
 
 Python 3.14 users are supported through the newer `winrt-*` packages. Older
 Python versions use `winsdk`.
@@ -158,15 +158,15 @@ Some apps, especially browser players and Apple Music, publish odd metadata such
 as:
 
 ```text
-artist = "Stealth — Baby ti e din - Single"
-title = "Baby ti e din"
+artist = "Artist — Song name - Single"
+title = "Song name"
 ```
 
 The app normalizes common cases so the OLED shows:
 
 ```text
-title = "Baby ti e din"
-artist = "Stealth"
+title = "Song name"
+artist = "Artist"
 ```
 
 ## Troubleshooting
