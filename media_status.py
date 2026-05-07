@@ -12,6 +12,17 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
+STOPPED_DISPLAY = "⏸ Nothing playing"
+CONFIG_KEYS = {
+    "mode",
+    "format",
+    "output",
+    "interval",
+    "bar_width",
+    "host",
+    "port",
+}
+
 
 def configure_stdout() -> None:
     reconfigure = getattr(sys.stdout, "reconfigure", None)
@@ -50,6 +61,11 @@ def load_media_manager():
         ) from exc
 
 
+def stopped_status(bar_width: int) -> MediaStatus:
+    display = display_line(None, None, "stopped", 0, 0, bar_width)
+    return MediaStatus(None, None, "stopped", 0, 0, None, display)
+
+
 def playback_state(status) -> str:
     name = getattr(status, "name", str(status)).lower()
     if "playing" in name:
@@ -57,6 +73,13 @@ def playback_state(status) -> str:
     if "paused" in name:
         return "paused"
     return "stopped"
+
+
+def clean_text(value) -> Optional[str]:
+    if value is None:
+        return None
+    text = " ".join(str(value).split())
+    return text or None
 
 
 def seconds(value) -> int:
@@ -67,11 +90,14 @@ def seconds(value) -> int:
     total_seconds = getattr(value, "total_seconds", None)
     if callable(total_seconds):
         return max(0, int(total_seconds()))
-    return max(0, int(value))
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError, OverflowError):
+        return 0
 
 
 def format_time(total_seconds: int) -> str:
-    total_seconds = max(0, int(total_seconds))
+    total_seconds = seconds(total_seconds)
     minutes, secs = divmod(total_seconds, 60)
     return f"{minutes}:{secs:02d}"
 
@@ -105,8 +131,16 @@ def display_line(
     duration: int,
     bar_width: int,
 ) -> str:
+    state = state if state in {"playing", "paused", "stopped"} else "stopped"
+    position = seconds(position)
+    duration = seconds(duration)
+    if duration > 0:
+        position = min(position, duration)
+    title = clean_text(title)
+    artist = clean_text(artist)
+
     if not title and not artist:
-        return "⏸ Nothing playing"
+        return STOPPED_DISPLAY
 
     icon = state_icon(state)
     name = title or "Unknown title"
@@ -123,6 +157,10 @@ class PositionTracker:
 
     def update(self, title: Optional[str], artist: Optional[str], state: str, position: int, duration: int) -> int:
         now = time.monotonic()
+        position = seconds(position)
+        duration = seconds(duration)
+        if duration > 0:
+            position = min(position, duration)
         key = (title or "", artist or "", duration)
 
         if key != self._last_key:
@@ -147,8 +185,8 @@ class PositionTracker:
 
 
 def normalize_metadata(title: Optional[str], artist: Optional[str]) -> tuple[Optional[str], Optional[str]]:
-    title = title.strip() if title else None
-    artist = artist.strip() if artist else None
+    title = clean_text(title)
+    artist = clean_text(artist)
 
     if title and artist:
         title_index = artist.lower().find(title.lower())
@@ -181,10 +219,13 @@ def normalize_metadata(title: Optional[str], artist: Optional[str]) -> tuple[Opt
 
 
 async def read_status(manager, bar_width: int) -> MediaStatus:
-    session = manager.get_current_session()
+    try:
+        session = manager.get_current_session()
+    except Exception:
+        return stopped_status(bar_width)
+
     if session is None:
-        display = display_line(None, None, "stopped", 0, 0, bar_width)
-        return MediaStatus(None, None, "stopped", 0, 0, None, display)
+        return stopped_status(bar_width)
 
     try:
         props = await session.try_get_media_properties_async()
@@ -207,14 +248,13 @@ async def read_status(manager, bar_width: int) -> MediaStatus:
         duration = 0
         last_updated = None
 
-    title = (getattr(props, "title", None) or "").strip() or None
-    artist = (getattr(props, "artist", None) or "").strip() or None
+    title = clean_text(getattr(props, "title", None))
+    artist = clean_text(getattr(props, "artist", None))
     title, artist = normalize_metadata(title, artist)
-    album = (getattr(props, "album_title", None) or "").strip() or None
+    album = clean_text(getattr(props, "album_title", None))
 
     if is_stale_finished_session(state, position, duration, last_updated):
-        display = display_line(None, None, "stopped", 0, 0, bar_width)
-        return MediaStatus(None, None, "stopped", 0, 0, None, display)
+        return stopped_status(bar_width)
 
     display = display_line(title, artist, state, position, duration, bar_width)
     return MediaStatus(title, artist, state, position, duration, album, display)
@@ -307,15 +347,28 @@ def beefweb_player_payload(status: MediaStatus, trcolumns: str = "%artist%,%titl
 
 
 def write_atomic(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text + "\n", encoding="utf-8")
     tmp.replace(path)
 
 
+class ChangedFileWriter:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._last_text: Optional[str] = None
+
+    def write(self, text: str) -> None:
+        if text == self._last_text:
+            return
+        write_atomic(self.path, text)
+        self._last_text = text
+
+
 class LatestStatus:
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._status = MediaStatus(None, None, "stopped", 0, 0, None, "⏸ Nothing playing")
+        self._status = MediaStatus(None, None, "stopped", 0, 0, None, STOPPED_DISPLAY)
         self._updated_at = time.monotonic()
 
     def set(self, status: MediaStatus) -> None:
@@ -405,10 +458,11 @@ def start_http_server(host: str, port: int, latest: LatestStatus, bar_width: int
 
 async def run(args) -> None:
     MediaManager = load_media_manager()
-    manager = await MediaManager.request_async()
+    manager = None
     latest = LatestStatus()
     tracker = PositionTracker()
     server = None
+    file_writer = ChangedFileWriter(args.output) if args.mode == "file" else None
 
     if args.mode == "http":
         server = start_http_server(args.host, args.port, latest, args.bar_width)
@@ -416,13 +470,26 @@ async def run(args) -> None:
 
     try:
         while True:
-            status = with_tracked_position(await read_status(manager, args.bar_width), tracker, args.bar_width)
+            try:
+                if manager is None:
+                    manager = await MediaManager.request_async()
+                status = await read_status(manager, args.bar_width)
+            except Exception as exc:
+                manager = None
+                status = stopped_status(args.bar_width)
+                print(f"GSMTC poll failed: {exc}", file=sys.stderr, flush=True)
+
+            status = with_tracked_position(status, tracker, args.bar_width)
             latest.set(status)
 
-            if args.mode == "console":
-                print(encode_status(status, args.format), flush=True)
-            elif args.mode == "file":
-                write_atomic(args.output, encode_status(status, args.format))
+            try:
+                encoded = encode_status(status, args.format)
+                if args.mode == "console":
+                    print(encoded, flush=True)
+                elif file_writer is not None:
+                    file_writer.write(encoded)
+            except Exception as exc:
+                print(f"Output update failed: {exc}", file=sys.stderr, flush=True)
 
             await asyncio.sleep(args.interval)
     finally:
@@ -430,18 +497,53 @@ async def run(args) -> None:
             server.shutdown()
 
 
+def load_config(path: Optional[Path]) -> dict:
+    if path is None:
+        return {}
+    try:
+        raw_config = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise SystemExit(f"Unable to read config file {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Invalid JSON config file {path}: {exc}") from exc
+
+    if not isinstance(raw_config, dict):
+        raise SystemExit(f"Config file {path} must contain a JSON object.")
+
+    config = {key: raw_config[key] for key in CONFIG_KEYS if key in raw_config}
+    if "mode" in config and config["mode"] not in {"console", "file", "http"}:
+        raise SystemExit("Config value `mode` must be one of: console, file, http.")
+    if "format" in config and config["format"] not in {"json", "display"}:
+        raise SystemExit("Config value `format` must be one of: json, display.")
+    if "output" in config:
+        config["output"] = str(config["output"])
+    for key, value_type in (("interval", float), ("bar_width", int), ("port", int)):
+        if key in config:
+            try:
+                config[key] = value_type(config[key])
+            except (TypeError, ValueError) as exc:
+                raise SystemExit(f"Config value `{key}` must be a {value_type.__name__}.") from exc
+    return config
+
+
 def parse_args():
+    config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--config", type=Path)
+    config_args, remaining = config_parser.parse_known_args()
+    config = load_config(config_args.config)
+
     parser = argparse.ArgumentParser(
-        description="Poll Windows GSMTC media status and output JSON or OLED display text."
+        description="Poll Windows GSMTC media status and output JSON or OLED display text.",
+        parents=[config_parser],
     )
-    parser.add_argument("--mode", choices=("console", "file", "http"), default="console")
-    parser.add_argument("--format", choices=("json", "display"), default="json")
-    parser.add_argument("--output", type=Path, default=Path("output.txt"))
-    parser.add_argument("--interval", type=float, default=1.0)
-    parser.add_argument("--bar-width", type=int, default=12)
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
-    args = parser.parse_args()
+    parser.add_argument("--mode", choices=("console", "file", "http"), default=config.get("mode", "console"))
+    parser.add_argument("--format", choices=("json", "display"), default=config.get("format", "json"))
+    parser.add_argument("--output", type=Path, default=Path(config.get("output", "output.txt")))
+    parser.add_argument("--interval", type=float, default=config.get("interval", 1.0))
+    parser.add_argument("--bar-width", type=int, default=config.get("bar_width", 12))
+    parser.add_argument("--host", default=config.get("host", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=config.get("port", 8765))
+    args = parser.parse_args(remaining)
 
     args.interval = min(2.0, max(1.0, args.interval))
     args.bar_width = min(20, max(10, args.bar_width))

@@ -144,6 +144,7 @@ python .\media_status.py --mode file --format display --output output.txt
 --bar-width 12
 --host 127.0.0.1
 --port 8765
+--config config.json
 ```
 
 Notes:
@@ -151,6 +152,19 @@ Notes:
 - `--interval` is clamped to 1-2 seconds.
 - `--bar-width` is clamped to 10-20 characters.
 - HTTP mode always serves JSON and the Beefweb shim.
+- `--config` accepts a small JSON object with any CLI option name, for example:
+
+```json
+{
+  "mode": "file",
+  "format": "display",
+  "output": "output.txt",
+  "interval": 1.0,
+  "bar_width": 12,
+  "host": "127.0.0.1",
+  "port": 8765
+}
+```
 
 ## Metadata Cleanup
 
